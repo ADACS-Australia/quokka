@@ -208,7 +208,7 @@ void RadhydroSimulation<ShockProblem>::setInitialConditionsAtLevel(int lev) {
 
 auto problem_main() -> int {
   // Problem parameters
-  const int max_timesteps = 2e4;
+  const int max_timesteps = 1; // 2e4;
   const double CFL_number = 0.4;
   const double Lx =
       0.01578396467532876; // 9.112876254180604 * (c/c_s0) / sigma_a;
@@ -291,120 +291,120 @@ auto problem_main() -> int {
       gasVelocity.at(i) = x1GasMom / rho;
     }
 
-    // read in exact solution
-    std::vector<double> xs_exact;
-    std::vector<double> Trad_exact;
-    std::vector<double> Tmat_exact;
-    std::vector<double> Frad_over_c_exact;
+//     // read in exact solution
+//     std::vector<double> xs_exact;
+//     std::vector<double> Trad_exact;
+//     std::vector<double> Tmat_exact;
+//     std::vector<double> Frad_over_c_exact;
 
-    std::string filename = "../extern/LowrieEdwards/shock.txt";
-    std::ifstream fstream(filename, std::ios::in);
-    AMREX_ALWAYS_ASSERT(fstream.is_open());
-    std::string header;
-    std::getline(fstream, header);
+//     std::string filename = "../extern/LowrieEdwards/shock.txt";
+//     std::ifstream fstream(filename, std::ios::in);
+//     AMREX_ALWAYS_ASSERT(fstream.is_open());
+//     std::string header;
+//     std::getline(fstream, header);
 
-    for (std::string line; std::getline(fstream, line);) {
-      std::istringstream iss(line);
-      std::vector<double> values;
+//     for (std::string line; std::getline(fstream, line);) {
+//       std::istringstream iss(line);
+//       std::vector<double> values;
 
-      for (double value = NAN; iss >> value;) {
-        values.push_back(value);
-      }
-      auto x_val = values.at(0);
-      auto Tmat_val = values.at(3);
-      auto Trad_val = values.at(4);
-      auto Frad_over_c_val = values.at(5);
+//       for (double value = NAN; iss >> value;) {
+//         values.push_back(value);
+//       }
+//       auto x_val = values.at(0);
+//       auto Tmat_val = values.at(3);
+//       auto Trad_val = values.at(4);
+//       auto Frad_over_c_val = values.at(5);
 
-      if ((x_val > 0.0) && (x_val < Lx)) {
-        xs_exact.push_back(x_val);
-        Tmat_exact.push_back(Tmat_val);
-        Trad_exact.push_back(Trad_val);
-        Frad_over_c_exact.push_back(Frad_over_c_val);
-      }
-    }
+//       if ((x_val > 0.0) && (x_val < Lx)) {
+//         xs_exact.push_back(x_val);
+//         Tmat_exact.push_back(Tmat_val);
+//         Trad_exact.push_back(Trad_val);
+//         Frad_over_c_exact.push_back(Frad_over_c_val);
+//       }
+//     }
 
-    // compute error norm
-    std::vector<double> Trad_interp(xs_exact.size());
-    amrex::Print() << "xs min/max = " << xs[0] << ", " << xs[xs.size() - 1]
-                   << std::endl;
-    amrex::Print() << "xs_exact min/max = " << xs_exact[0] << ", "
-                   << xs_exact[xs_exact.size() - 1] << std::endl;
+//     // compute error norm
+//     std::vector<double> Trad_interp(xs_exact.size());
+//     amrex::Print() << "xs min/max = " << xs[0] << ", " << xs[xs.size() - 1]
+//                    << std::endl;
+//     amrex::Print() << "xs_exact min/max = " << xs_exact[0] << ", "
+//                    << xs_exact[xs_exact.size() - 1] << std::endl;
 
-    interpolate_arrays(xs_exact.data(), Trad_interp.data(),
-                       static_cast<int>(xs_exact.size()), xs.data(),
-                       Trad.data(), static_cast<int>(xs.size()));
+//     interpolate_arrays(xs_exact.data(), Trad_interp.data(),
+//                        static_cast<int>(xs_exact.size()), xs.data(),
+//                        Trad.data(), static_cast<int>(xs.size()));
 
-    double err_norm = 0.;
-    double sol_norm = 0.;
-    for (int i = 0; i < xs_exact.size(); ++i) {
-      err_norm += std::abs(Trad_interp[i] - Trad_exact[i]);
-      sol_norm += std::abs(Trad_exact[i]);
-    }
+//     double err_norm = 0.;
+//     double sol_norm = 0.;
+//     for (int i = 0; i < xs_exact.size(); ++i) {
+//       err_norm += std::abs(Trad_interp[i] - Trad_exact[i]);
+//       sol_norm += std::abs(Trad_exact[i]);
+//     }
 
-    const double error_tol = 0.01;
-    double rel_error = NAN;
-    rel_error = err_norm / sol_norm;
-    amrex::Print() << "Error norm = " << err_norm << std::endl;
-    amrex::Print() << "Solution norm = " << sol_norm << std::endl;
-    amrex::Print() << "Relative L1 error norm = " << rel_error << std::endl;
+//     const double error_tol = 0.01;
+//     double rel_error = NAN;
+//     rel_error = err_norm / sol_norm;
+//     amrex::Print() << "Error norm = " << err_norm << std::endl;
+//     amrex::Print() << "Solution norm = " << sol_norm << std::endl;
+//     amrex::Print() << "Relative L1 error norm = " << rel_error << std::endl;
 
-    if ((rel_error > error_tol) || std::isnan(rel_error)) {
-      status = 1;
-    }
+//     if ((rel_error > error_tol) || std::isnan(rel_error)) {
+//       status = 1;
+//     }
 
-#ifdef HAVE_PYTHON
-    // plot results
+// #ifdef HAVE_PYTHON
+//     // plot results
 
-    // temperature
-    std::map<std::string, std::string> Trad_args;
-    Trad_args["label"] = "Trad";
-    Trad_args["color"] = "black";
-    matplotlibcpp::plot(xs, Trad, Trad_args);
+//     // temperature
+//     std::map<std::string, std::string> Trad_args;
+//     Trad_args["label"] = "Trad";
+//     Trad_args["color"] = "black";
+//     matplotlibcpp::plot(xs, Trad, Trad_args);
 
-    if (fstream.is_open()) {
-      std::map<std::string, std::string> Trad_exact_args;
-      Trad_exact_args["label"] = "Trad (diffusion ODE)";
-      Trad_exact_args["color"] = "black";
-      Trad_exact_args["linestyle"] = "dashed";
-      matplotlibcpp::plot(xs_exact, Trad_exact, Trad_exact_args);
-    }
+//     if (fstream.is_open()) {
+//       std::map<std::string, std::string> Trad_exact_args;
+//       Trad_exact_args["label"] = "Trad (diffusion ODE)";
+//       Trad_exact_args["color"] = "black";
+//       Trad_exact_args["linestyle"] = "dashed";
+//       matplotlibcpp::plot(xs_exact, Trad_exact, Trad_exact_args);
+//     }
 
-    std::map<std::string, std::string> Tgas_args;
-    Tgas_args["label"] = "Tmat";
-    Tgas_args["color"] = "red";
-    matplotlibcpp::plot(xs, Tgas, Tgas_args);
+//     std::map<std::string, std::string> Tgas_args;
+//     Tgas_args["label"] = "Tmat";
+//     Tgas_args["color"] = "red";
+//     matplotlibcpp::plot(xs, Tgas, Tgas_args);
 
-    if (fstream.is_open()) {
-      std::map<std::string, std::string> Tgas_exact_args;
-      Tgas_exact_args["label"] = "Tmat (diffusion ODE)";
-      Tgas_exact_args["color"] = "red";
-      Tgas_exact_args["linestyle"] = "dashed";
-      matplotlibcpp::plot(xs_exact, Tmat_exact, Tgas_exact_args);
-    }
+//     if (fstream.is_open()) {
+//       std::map<std::string, std::string> Tgas_exact_args;
+//       Tgas_exact_args["label"] = "Tmat (diffusion ODE)";
+//       Tgas_exact_args["color"] = "red";
+//       Tgas_exact_args["linestyle"] = "dashed";
+//       matplotlibcpp::plot(xs_exact, Tmat_exact, Tgas_exact_args);
+//     }
 
-    matplotlibcpp::xlabel("length x (dimensionless)");
-    matplotlibcpp::ylabel("temperature (dimensionless)");
-    matplotlibcpp::legend();
-    matplotlibcpp::title(fmt::format("time t = {:.4g}", sim.tNew_[0]));
-    matplotlibcpp::save("./radshock_temperature.pdf");
+//     matplotlibcpp::xlabel("length x (dimensionless)");
+//     matplotlibcpp::ylabel("temperature (dimensionless)");
+//     matplotlibcpp::legend();
+//     matplotlibcpp::title(fmt::format("time t = {:.4g}", sim.tNew_[0]));
+//     matplotlibcpp::save("./radshock_temperature.pdf");
 
-    // gas density
-    std::map<std::string, std::string> gasdens_args;
-    std::map<std::string, std::string> gasvx_args;
-    gasdens_args["label"] = "gas density";
-    gasdens_args["color"] = "black";
-    gasvx_args["label"] = "gas velocity";
-    gasvx_args["color"] = "blue";
-    gasvx_args["linestyle"] = "dashed";
+//     // gas density
+//     std::map<std::string, std::string> gasdens_args;
+//     std::map<std::string, std::string> gasvx_args;
+//     gasdens_args["label"] = "gas density";
+//     gasdens_args["color"] = "black";
+//     gasvx_args["label"] = "gas velocity";
+//     gasvx_args["color"] = "blue";
+//     gasvx_args["linestyle"] = "dashed";
 
-    matplotlibcpp::clf();
-    matplotlibcpp::plot(xs, gasDensity, gasdens_args);
-    matplotlibcpp::plot(xs, gasVelocity, gasvx_args);
-    matplotlibcpp::xlabel("length x (dimensionless)");
-    matplotlibcpp::ylabel("mass density (dimensionless)");
-    matplotlibcpp::legend();
-    matplotlibcpp::save("./radshock_gasdensity.pdf");
-#endif
+//     matplotlibcpp::clf();
+//     matplotlibcpp::plot(xs, gasDensity, gasdens_args);
+//     matplotlibcpp::plot(xs, gasVelocity, gasvx_args);
+//     matplotlibcpp::xlabel("length x (dimensionless)");
+//     matplotlibcpp::ylabel("mass density (dimensionless)");
+//     matplotlibcpp::legend();
+//     matplotlibcpp::save("./radshock_gasdensity.pdf");
+// #endif
 
   }
 
