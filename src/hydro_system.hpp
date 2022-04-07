@@ -370,10 +370,9 @@ void HydroSystem<problem_t>::PredictStep(
         for (int n = 0; n < nvars; ++n) {
           consVarNew(i, j, k, n) =
               consVarOld(i, j, k, n) +
-              (AMREX_D_TERM(
-                  (dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n)),
-                  +(dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n)),
-                  +(dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n))));
+                  (dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n))
+                  + (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
+                  // + (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
         }
 
         // check if state is valid -- flag for re-do if not
@@ -427,8 +426,8 @@ void HydroSystem<problem_t>::AddFluxesRK2(
               (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
 #endif
 #if (AMREX_SPACEDIM == 3)
-          const double FzU_1 =
-              (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
+          const double FzU_1 = 0.;
+              // (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
 #endif
 
           // save results in U_new
@@ -560,10 +559,10 @@ void HydroSystem<problem_t>::FlattenShocks(
               x2Chi_in(i_in, j_in - 1, k_in), x2Chi_in(i_in, j_in, k_in),
               x2Chi_in(i_in, j_in + 1, k_in),
 #endif
-#if (AMREX_SPACEDIM == 3)
-              x3Chi_in(i_in, j_in, k_in - 1), x3Chi_in(i_in, j_in, k_in),
-              x3Chi_in(i_in, j_in, k_in + 1),
-#endif
+// #if (AMREX_SPACEDIM == 3)
+//               x3Chi_in(i_in, j_in, k_in - 1), x3Chi_in(i_in, j_in, k_in),
+//               x3Chi_in(i_in, j_in, k_in + 1),
+// #endif
         });
 
         auto [i, j, k] = quokka::reorderMultiIndex<DIR>(i_in, j_in, k_in);

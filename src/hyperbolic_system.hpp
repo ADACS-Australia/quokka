@@ -364,10 +364,9 @@ void HyperbolicSystem<problem_t>::PredictStep(
 			for (int n = 0; n < nvars; ++n) {
 				consVarNew(i, j, k, n) =
 				consVarOld(i, j, k, n) +
-				(AMREX_D_TERM( (dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n)),
-							+ (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n)),
-							+ (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n))
-							));
+							(dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n))
+							+ (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
+							// + (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
 			}
 
 			// check if state is valid -- flag for re-do if not
@@ -418,7 +417,7 @@ void HyperbolicSystem<problem_t>::AddFluxesRK2(
 				const double FyU_1 = (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
 	#endif
 	#if (AMREX_SPACEDIM == 3)
-				const double FzU_1 = (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
+				const double FzU_1 = 0.; // (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
 	#endif
 
 				// save results in U_new

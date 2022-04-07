@@ -693,12 +693,9 @@ auto RadhydroSimulation<problem_t>::computeHydroFluxes(
 	amrex::FArrayBox x1Flat(flatteningRange, 1, amrex::The_Async_Arena());
 	amrex::FArrayBox x2Flat(flatteningRange, 1, amrex::The_Async_Arena());
 	amrex::FArrayBox x3Flat(flatteningRange, 1, amrex::The_Async_Arena());
-	AMREX_D_TERM(HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X1>(
-			primVar.array(), x1Flat.array(), flatteningRange);
-		, HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X2>(
-			primVar.array(), x2Flat.array(), flatteningRange);
-		, HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X3>(
-			primVar.array(), x3Flat.array(), flatteningRange); )
+	HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X1>(primVar.array(), x1Flat.array(), flatteningRange);
+	HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X2>(primVar.array(), x2Flat.array(), flatteningRange);
+	// HydroSystem<problem_t>::template ComputeFlatteningCoefficients<FluxDir::X3>(primVar.array(), x3Flat.array(), flatteningRange);
 
 	// compute flux functions
 	amrex::Box const &x1FluxRange = amrex::surroundingNodes(indexRange, 0);
@@ -711,12 +708,9 @@ auto RadhydroSimulation<problem_t>::computeHydroFluxes(
 	amrex::Box const &x3FluxRange = amrex::surroundingNodes(indexRange, 2);
 	amrex::FArrayBox x3Flux(x3FluxRange, nvars, amrex::The_Async_Arena()); // node-centered in z
 #endif
-	AMREX_D_TERM(hydroFluxFunction<FluxDir::X1>(primVar.array(), x1Flux,
-					x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars);
-		     , hydroFluxFunction<FluxDir::X2>(primVar.array(), x2Flux,
-					x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars);
-		     , hydroFluxFunction<FluxDir::X3>(primVar.array(), x3Flux,
-					x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars); )
+	hydroFluxFunction<FluxDir::X1>(primVar.array(), x1Flux, x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars);
+	hydroFluxFunction<FluxDir::X2>(primVar.array(), x2Flux, x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars);
+	// hydroFluxFunction<FluxDir::X3>(primVar.array(), x3Flux, x1Flat.array(), x2Flat.array(), x3Flat.array(), indexRange, nvars);
 
 	return {AMREX_D_DECL(std::move(x1Flux), std::move(x2Flux), std::move(x3Flux))};
 }
@@ -803,9 +797,9 @@ auto RadhydroSimulation<problem_t>::computeFOHydroFluxes(
 	amrex::Box const &x3FluxRange = amrex::surroundingNodes(indexRange, 2);
 	amrex::FArrayBox x3Flux(x3FluxRange, nvars, amrex::The_Async_Arena()); // node-centered in z
 #endif
-	AMREX_D_TERM(hydroFOFluxFunction<FluxDir::X1>(primVar.array(), x1Flux, indexRange, nvars);
-		       , hydroFOFluxFunction<FluxDir::X2>(primVar.array(), x2Flux, indexRange, nvars);
-		       , hydroFOFluxFunction<FluxDir::X3>(primVar.array(), x3Flux, indexRange, nvars); )
+	hydroFOFluxFunction<FluxDir::X1>(primVar.array(), x1Flux, indexRange, nvars);
+	hydroFOFluxFunction<FluxDir::X2>(primVar.array(), x2Flux, indexRange, nvars);
+	// hydroFOFluxFunction<FluxDir::X3>(primVar.array(), x3Flux, indexRange, nvars);
 
 	return {AMREX_D_DECL(std::move(x1Flux), std::move(x2Flux), std::move(x3Flux))};
 }
