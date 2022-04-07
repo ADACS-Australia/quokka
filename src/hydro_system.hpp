@@ -371,8 +371,8 @@ void HydroSystem<problem_t>::PredictStep(
           consVarNew(i, j, k, n) =
               consVarOld(i, j, k, n) +
                   (dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n))
-                  + (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
-                  // + (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
+                  // + (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
+                  + (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
         }
 
         // check if state is valid -- flag for re-do if not
@@ -422,12 +422,12 @@ void HydroSystem<problem_t>::AddFluxesRK2(
           const double FxU_1 =
               (dt / dx) * (x1Flux(i, j, k, n) - x1Flux(i + 1, j, k, n));
 #if (AMREX_SPACEDIM >= 2)
-          const double FyU_1 =
-              (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
+          const double FyU_1 = 0.;
+              // (dt / dy) * (x2Flux(i, j, k, n) - x2Flux(i, j + 1, k, n));
 #endif
 #if (AMREX_SPACEDIM == 3)
-          const double FzU_1 = 0.;
-              // (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
+          const double FzU_1 =
+              (dt / dz) * (x3Flux(i, j, k, n) - x3Flux(i, j, k + 1, n));
 #endif
 
           // save results in U_new
@@ -555,14 +555,14 @@ void HydroSystem<problem_t>::FlattenShocks(
         double chi_ijk = std::min({
           x1Chi_in(i_in - 1, j_in, k_in), x1Chi_in(i_in, j_in, k_in),
               x1Chi_in(i_in + 1, j_in, k_in),
-#if (AMREX_SPACEDIM >= 2)
-              x2Chi_in(i_in, j_in - 1, k_in), x2Chi_in(i_in, j_in, k_in),
-              x2Chi_in(i_in, j_in + 1, k_in),
-#endif
-// #if (AMREX_SPACEDIM == 3)
-//               x3Chi_in(i_in, j_in, k_in - 1), x3Chi_in(i_in, j_in, k_in),
-//               x3Chi_in(i_in, j_in, k_in + 1),
+// #if (AMREX_SPACEDIM >= 2)
+//               x2Chi_in(i_in, j_in - 1, k_in), x2Chi_in(i_in, j_in, k_in),
+//               x2Chi_in(i_in, j_in + 1, k_in),
 // #endif
+#if (AMREX_SPACEDIM == 3)
+              x3Chi_in(i_in, j_in, k_in - 1), x3Chi_in(i_in, j_in, k_in),
+              x3Chi_in(i_in, j_in, k_in + 1),
+#endif
         });
 
         auto [i, j, k] = quokka::reorderMultiIndex<DIR>(i_in, j_in, k_in);
