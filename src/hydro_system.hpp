@@ -113,10 +113,10 @@ public:
                           array_t &x1FluxDiffusive,
                           amrex::Box const &indexRange);
 
-  template <FluxDir DIR>
   static void
   ComputeFlatteningCoefficients(amrex::Array4<const amrex::Real> const &primVar,
-                                array_t &x1Chi, amrex::Box const &indexRange);
+                                array_t &x1Chi, array_t &x2Chi, array_t &x3Chi,
+                                amrex::Box const &indexRange);
 
   template <FluxDir DIR>
   static void FlattenShocks(amrex::Array4<const amrex::Real> const &q_in,
@@ -447,12 +447,9 @@ void HydroSystem<problem_t>::AddFluxesRK2(
 }
 
 template <typename problem_t>
-template <FluxDir DIR>
 void HydroSystem<problem_t>::ComputeFlatteningCoefficients(
-    amrex::Array4<const amrex::Real> const &primVar_in, array_t &x1Chi_in,
+    amrex::Array4<const amrex::Real> const &primVar, array_t &x1Chi, array_t &x2Chi, array_t &x3Chi,
     amrex::Box const &indexRange) {
-  quokka::Array4View<const amrex::Real, DIR> primVar(primVar_in);
-  quokka::Array4View<amrex::Real, DIR> x1Chi(x1Chi_in);
 
   // compute the PPM shock flattening coefficient following
   //   Appendix B1 of Mignone+ 2005 [this description has typos].
@@ -465,32 +462,68 @@ void HydroSystem<problem_t>::ComputeFlatteningCoefficients(
   constexpr double Zmin = 0.25;
 
   // cell-centered kernel
-  amrex::ParallelFor(indexRange, [=] AMREX_GPU_DEVICE(int i_in, int j_in,
-                                                      int k_in) {
-    auto [i, j, k] = quokka::reorderMultiIndex<DIR>(i_in, j_in, k_in);
+  amrex::ParallelFor(indexRange, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
 
-    amrex::Real Pplus2 = primVar(i + 2, j, k, pressure_index);
-    amrex::Real Pplus1 = primVar(i + 1, j, k, pressure_index);
-    amrex::Real P = primVar(i, j, k, pressure_index);
-    amrex::Real Pminus1 = primVar(i - 1, j, k, pressure_index);
-    amrex::Real Pminus2 = primVar(i - 2, j, k, pressure_index);
+    // auto [i, j, k] = quokka::reorderMultiIndex<DIR>(i_in, j_in, k_in);
+
+    amrex::Real P1plus2 =  primVar(i + 2, j, k, pressure_index);
+    amrex::Real P1plus1 =  primVar(i + 1, j, k, pressure_index);
+    amrex::Real P       =  primVar(i    , j, k, pressure_index);
+    amrex::Real P1minus1 = primVar(i - 1, j, k, pressure_index);
+    amrex::Real P1minus2 = primVar(i - 2, j, k, pressure_index);
+
+    amrex::Real P2plus2 =  primVar(i,j + 2, k, pressure_index);
+    amrex::Real P2plus1 =  primVar(i,j + 1, k, pressure_index);
+    // amrex::Real P2      =  primVar(i,j    , k, pressure_index);
+    amrex::Real P2minus1 = primVar(i,j - 1, k, pressure_index);
+    amrex::Real P2minus2 = primVar(i,j - 2, k, pressure_index);
+
+    amrex::Real P3plus2 =  primVar(i, j, k + 2, pressure_index);
+    amrex::Real P3plus1 =  primVar(i, j, k + 1, pressure_index);
+    // amrex::Real P3      =  primVar(i, j, k    , pressure_index);
+    amrex::Real P3minus1 = primVar(i, j, k - 1, pressure_index);
+    amrex::Real P3minus2 = primVar(i, j, k - 2, pressure_index);
 
     if constexpr (reconstruct_eint) {
       // compute (rho e) (gamma - 1)
-      Pplus2 *= primVar(i + 2, j, k, primDensity_index) * (gamma_ - 1.0);
-      Pplus1 *= primVar(i + 1, j, k, primDensity_index) * (gamma_ - 1.0);
-      P *= primVar(i, j, k, primDensity_index) * (gamma_ - 1.0);
-      Pminus1 *= primVar(i - 1, j, k, primDensity_index) * (gamma_ - 1.0);
-      Pminus2 *= primVar(i - 2, j, k, primDensity_index) * (gamma_ - 1.0);
+      P1plus2  *=  primVar(i + 2, j, k, primDensity_index) * (gamma_ - 1.0);
+      P1plus1  *=  primVar(i + 1, j, k, primDensity_index) * (gamma_ - 1.0);
+      P        *=  primVar(i,     j, k, primDensity_index) * (gamma_ - 1.0);
+      P1minus1 *=  primVar(i - 1, j, k, primDensity_index) * (gamma_ - 1.0);
+      P1minus2 *=  primVar(i - 2, j, k, primDensity_index) * (gamma_ - 1.0);
+
+      P2plus2  *=  primVar(i, j + 2, k, primDensity_index) * (gamma_ - 1.0);
+      P2plus1  *=  primVar(i, j + 1, k, primDensity_index) * (gamma_ - 1.0);
+      // P2       *=  primVar(i, j    , k, primDensity_index) * (gamma_ - 1.0);
+      P2minus1 *=  primVar(i, j - 1, k, primDensity_index) * (gamma_ - 1.0);
+      P2minus2 *=  primVar(i, j - 2, k, primDensity_index) * (gamma_ - 1.0);
+
+      P3plus2  *=  primVar(i, j, k + 2, primDensity_index) * (gamma_ - 1.0);
+      P3plus1  *=  primVar(i, j, k + 1, primDensity_index) * (gamma_ - 1.0);
+      // P3       *=  primVar(i, j, k    , primDensity_index) * (gamma_ - 1.0);
+      P3minus1 *=  primVar(i, j, k - 1, primDensity_index) * (gamma_ - 1.0);
+      P3minus2 *=  primVar(i, j, k - 2, primDensity_index) * (gamma_ - 1.0);
     }
 
     if constexpr (is_eos_isothermal()) {
       const amrex::Real cs_sq = cs_iso_ * cs_iso_;
-      Pplus2 = primVar(i + 2, j, k, primDensity_index) * cs_sq;
-      Pplus1 = primVar(i + 1, j, k, primDensity_index) * cs_sq;
-      P = primVar(i, j, k, primDensity_index) * cs_sq;
-      Pminus1 = primVar(i - 1, j, k, primDensity_index) * cs_sq;
-      Pminus2 = primVar(i - 2, j, k, primDensity_index) * cs_sq;
+      P1plus2  = primVar(i + 2, j, k, primDensity_index) * cs_sq;
+      P1plus1  = primVar(i + 1, j, k, primDensity_index) * cs_sq;
+      P        = primVar(i    , j, k, primDensity_index) * cs_sq;
+      P1minus1 = primVar(i - 1, j, k, primDensity_index) * cs_sq;
+      P1minus2 = primVar(i - 2, j, k, primDensity_index) * cs_sq;
+
+      P2plus2  = primVar(i, j + 2, k, primDensity_index) * cs_sq;
+      P2plus1  = primVar(i, j + 1, k, primDensity_index) * cs_sq;
+      // P2       = primVar(i, j    , k, primDensity_index) * cs_sq;
+      P2minus1 = primVar(i, j - 1, k, primDensity_index) * cs_sq;
+      P2minus2 = primVar(i, j - 2, k, primDensity_index) * cs_sq;
+
+      P3plus2  = primVar(i, j, k + 2, primDensity_index) * cs_sq;
+      P3plus1  = primVar(i, j, k + 1, primDensity_index) * cs_sq;
+      // P3       = primVar(i, j, k    , primDensity_index) * cs_sq;
+      P3minus1 = primVar(i, j, k - 1, primDensity_index) * cs_sq;
+      P3minus2 = primVar(i, j, k - 2, primDensity_index) * cs_sq;
     }
 
     // beta is a measure of shock resolution (Eq. 74 of Miller & Colella 2002)
@@ -498,35 +531,56 @@ void HydroSystem<problem_t>::ComputeFlatteningCoefficients(
     //   four computational cells. If beta is small enough, then we assume that
     //   any discontinuity is already sufficiently well resolved that additional
     //   dissipation (flattening) is not required."
-    const double beta_denom = std::abs(Pplus2 - Pminus2);
+    const double beta1_denom = std::abs(P1plus2 - P1minus2);
+    const double beta2_denom = std::abs(P2plus2 - P2minus2);
+    const double beta3_denom = std::abs(P3plus2 - P3minus2);
     // avoid division by zero (in this case, chi = 1 anyway)
-    const double beta =
-        (beta_denom != 0) ? (std::abs(Pplus1 - Pminus1) / beta_denom) : 0;
+    const double beta1 = (beta1_denom != 0) ? (std::abs(P1plus1 - P1minus1) / beta1_denom) : 0;
+    const double beta2 = (beta2_denom != 0) ? (std::abs(P2plus1 - P2minus1) / beta2_denom) : 0;
+    const double beta3 = (beta3_denom != 0) ? (std::abs(P3plus1 - P3minus1) / beta3_denom) : 0;
 
     // Eq. 75 of Miller & Colella 2002
-    const double chi_min =
-        std::max(0., std::min(1., (beta_max - beta) / (beta_max - beta_min)));
+    const double chi1_min = std::max(0., std::min(1., (beta_max - beta1) / (beta_max - beta_min)));
+    const double chi2_min = std::max(0., std::min(1., (beta_max - beta2) / (beta_max - beta_min)));
+    const double chi3_min = std::max(0., std::min(1., (beta_max - beta3) / (beta_max - beta_min)));
 
     // Z is a measure of shock strength (Eq. 76 of Miller & Colella 2002)
     const double K_S = gamma_ * P; // equal to \rho c_s^2
-    const double Z = std::abs(Pplus1 - Pminus1) / K_S;
+    const double Z1 = std::abs(P1plus1 - P1minus1) / K_S;
+    const double Z2 = std::abs(P2plus1 - P2minus1) / K_S;
+    const double Z3 = std::abs(P3plus1 - P3minus1) / K_S;
 
     // check for converging flow along the normal direction DIR (Eq. 77)
-    int velocity_index = 0;
-    if constexpr (DIR == FluxDir::X1) {
-      velocity_index = x1Velocity_index;
-    } else if constexpr (DIR == FluxDir::X2) {
-      velocity_index = x2Velocity_index;
-    } else if constexpr (DIR == FluxDir::X3) {
-      velocity_index = x3Velocity_index;
+    // int velocity_index = 0;
+    // if constexpr (DIR == FluxDir::X1) {
+    //   velocity_index = x1Velocity_index;
+    // } else if constexpr (DIR == FluxDir::X2) {
+    //   velocity_index = x2Velocity_index;
+    // } else if constexpr (DIR == FluxDir::X3) {
+    //   velocity_index = x3Velocity_index;
+    // }
+
+    double chi1 = 1.0;
+    double chi2 = 1.0;
+    double chi3 = 1.0;
+
+    if (primVar(i + 1, j, k, x1Velocity_index) <
+        primVar(i - 1, j, k, x1Velocity_index)) {
+      chi1 = std::max(chi1_min, std::min(1., (Zmax - Z1) / (Zmax - Zmin)));
     }
-    double chi = 1.0;
-    if (primVar(i + 1, j, k, velocity_index) <
-        primVar(i - 1, j, k, velocity_index)) {
-      chi = std::max(chi_min, std::min(1., (Zmax - Z) / (Zmax - Zmin)));
+    if (primVar(i + 1, j, k, x2Velocity_index) <
+        primVar(i - 1, j, k, x2Velocity_index)) {
+      chi2 = std::max(chi2_min, std::min(1., (Zmax - Z2) / (Zmax - Zmin)));
+    }
+    if (primVar(i + 1, j, k, x3Velocity_index) <
+        primVar(i - 1, j, k, x3Velocity_index)) {
+      chi3 = std::max(chi3_min, std::min(1., (Zmax - Z3) / (Zmax - Zmin)));
     }
 
-    x1Chi(i, j, k) = chi;
+
+    x1Chi(i, j, k) = chi1;
+    x2Chi(i, j, k) = chi2;
+    x3Chi(i, j, k) = chi3;
   });
 }
 
