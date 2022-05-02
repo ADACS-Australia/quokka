@@ -497,7 +497,6 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 
 			const amrex::Box &fullRange = iter.validbox(); // 'validbox' == exclude ghost zones
 
-			// amrex::Box *rangePtr;
 			amrex::Box indexRange = fullRange;
 
 			switch(i) {
@@ -593,10 +592,19 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 							fluxScaleFactor * dt_lev);
 			}
 		}
+	}
 
 		if (integratorOrder_ == 2) {
 			// update ghost zones [intermediate stage stored in state_new_]
 			fillBoundaryConditions(state_new_[lev], state_new_[lev], lev, time + dt_lev);
+
+			for (int i = 0; i <= 6; i++) {
+
+				// After the interior zones have been calculated, wait for communication to finish
+				if (i == 1) {
+					if (lev == 0) state_old_[lev].FillBoundary_finish();
+				}
+
 
 			// check intermediate state validity
 			AMREX_ASSERT(!state_new_[lev].contains_nan(0, state_new_[lev].nComp()));
@@ -605,7 +613,46 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 			// advance all grids on local processor (Stage 2 of integrator)
 			for (amrex::MFIter iter(state_new_[lev]); iter.isValid(); ++iter) {
 
-				const amrex::Box &indexRange = iter.validbox(); // 'validbox' == exclude ghost zones
+				const amrex::Box &fullRange = iter.validbox(); // 'validbox' == exclude ghost zones
+
+				amrex::Box indexRange = fullRange;
+
+				switch(i) {
+					case 0: // Interior cells
+						indexRange.grow(-nghost_);
+						break;
+
+					case 1:
+						indexRange.growHi(0, -(fullRange.length(0)-nghost_));
+						break;
+
+					case 2:
+						indexRange.growLo(0, -(fullRange.length(0)-nghost_));
+						break;
+
+					case 3:
+						indexRange.growHi(1, -(fullRange.length(1)-nghost_));
+						indexRange.grow(0, -nghost_);
+						break;
+
+					case 4:
+						indexRange.growLo(1, -(fullRange.length(1)-nghost_));
+						indexRange.grow(0, -nghost_);
+						break;
+
+					case 5:
+						indexRange.growHi(2, -(fullRange.length(2)-nghost_));
+						indexRange.grow(1, -nghost_);
+						indexRange.grow(0, -nghost_);
+						break;
+
+					case 6:
+						indexRange.growLo(2, -(fullRange.length(2)-nghost_));
+						indexRange.grow(1, -nghost_);
+						indexRange.grow(0, -nghost_);
+						break;
+				}
+
 				auto const &stateOld = state_old_[lev].const_array(iter);
 				auto const &stateInter = state_new_[lev].const_array(iter);
 				auto fluxArrays = computeHydroFluxes(stateInter, indexRange, ncompHydro_);
