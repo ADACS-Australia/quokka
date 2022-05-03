@@ -497,6 +497,8 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 
 			const amrex::Box &fullRange = iter.validbox(); // 'validbox' == exclude ghost zones
 
+			fullRange.grow(nghost_);
+
 			amrex::Box indexRange = fullRange;
 
 			switch(i) {
@@ -614,6 +616,8 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 			for (amrex::MFIter iter(state_new_[lev]); iter.isValid(); ++iter) {
 
 				const amrex::Box &fullRange = iter.validbox(); // 'validbox' == exclude ghost zones
+
+				fullRange.grow(nghost_);
 
 				amrex::Box indexRange = fullRange;
 
