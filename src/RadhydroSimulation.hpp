@@ -502,7 +502,7 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 
 			switch(i) {
 				case 0: // Interior cells
-					indexRange.grow(-nghost_);
+					indexRange.grow(-2*nghost_);
 					break;
 
 				case 1:
@@ -552,7 +552,7 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 				redoFlag.array());
 
 			// first-order flux correction (FOFC)
-			if (redoFlag.max<amrex::RunOn::Device>() != quokka::redoFlag::none) {
+			if (false && redoFlag.max<amrex::RunOn::Device>() != quokka::redoFlag::none) {
 				// compute first-order fluxes (on the whole FAB)
 				auto FOFluxArrays = computeFOHydroFluxes(stateOld, indexRange, ncompHydro_);
 
@@ -621,7 +621,7 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 
 				switch(i) {
 					case 0: // Interior cells
-						indexRange.grow(-nghost_);
+						indexRange.grow(-2*nghost_);
 						break;
 
 					case 1:
