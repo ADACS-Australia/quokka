@@ -11,6 +11,9 @@
 
 // c++ headers
 #include <csignal>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -22,6 +25,7 @@
 #include "AMReX_AmrCore.H"
 #include "AMReX_Array.H"
 #include "AMReX_Array4.H"
+#include "AMReX_AsyncOut.H"
 #include "AMReX_BCRec.H"
 #include "AMReX_BC_TYPES.H"
 #include "AMReX_BLassert.H"
@@ -38,6 +42,7 @@
 #include "AMReX_LayoutData.H"
 #include "AMReX_MFInterpolater.H"
 #include "AMReX_MultiFabUtil.H"
+#include "AMReX_ParallelContext.H"
 #include "AMReX_ParallelDescriptor.H"
 #include "AMReX_REAL.H"
 #include "AMReX_SPACE.H"
@@ -52,11 +57,21 @@
 #include <AMReX_Utility.H>
 #include <fmt/core.h>
 
+#ifdef AMREX_USE_ASCENT
+#include <AMReX_Conduit_Blueprint.H>
+#include <ascent.hpp>
+#endif
+
 // internal headers
 #include "CheckNaN.hpp"
 #include "math_impl.hpp"
 
 #define USE_YAFLUXREGISTER
+
+#ifdef AMREX_USE_ASCENT
+using namespace conduit;
+using namespace ascent;
+#endif
 
 // Main simulation class; solvers should inherit from this
 template <typename problem_t> class AMRSimulation : public amrex::AmrCore {
@@ -75,6 +90,7 @@ public:
   amrex::Real cflNumber_ = 0.3;     // default
   amrex::Long cycleCount_ = 0;
   amrex::Long maxTimesteps_ = 1e4; // default
+  amrex::Long maxWalltime_ = 0;    // default: no limit
   int plotfileInterval_ = 10;      // -1 == no output
   int checkpointInterval_ = -1;    // -1 == no output
 
@@ -156,7 +172,6 @@ public:
   void AverageDown();
   void AverageDownTo(int crse_lev);
   void timeStepWithSubcycling(int lev, amrex::Real time, int iteration);
-  void doRegridIfNeeded(int step, amrex::Real time);
 
   void incrementFluxRegisters(
       amrex::MFIter &mfi, amrex::YAFluxRegister *fr_as_crse,
@@ -175,12 +190,15 @@ public:
   [[nodiscard]] auto PlotFileName(int lev) const -> std::string;
   [[nodiscard]] auto PlotFileMF() const -> amrex::Vector<amrex::MultiFab>;
   [[nodiscard]] auto PlotFileMFAtLevel(int lev) const -> amrex::MultiFab;
-  void WritePlotFile() const;
+  void WritePlotFile(); // cannot be const due to Ascent
   void WriteCheckpointFile() const;
+  void SetLastCheckpointSymlink(std::string const &checkpointname) const;
   void ReadCheckpointFile();
-  void LoadBalance();
-  void ResetCosts();
-
+  auto getWalltime() -> amrex::Real;
+#ifdef AMREX_USE_ASCENT
+  void AscentCustomRender(conduit::Node const &blueprintMesh,
+                          std::string const &plotfilename);
+#endif
 protected:
   amrex::Vector<amrex::BCRec> boundaryConditions_; // on level 0
   amrex::Vector<amrex::MultiFab> state_old_;
@@ -220,6 +238,11 @@ protected:
   // performance metrics
   amrex::Long cellUpdates_ = 0;
   amrex::Vector<amrex::Long> cellUpdatesEachLevel_;
+
+  // external objects
+#ifdef AMREX_USE_ASCENT
+  Ascent ascent_;
+#endif
 };
 
 template <typename problem_t>
@@ -278,6 +301,14 @@ void AMRSimulation<problem_t>::initialize(
       amrex::Abort("Grids not properly nested!");
     }
   }
+
+#ifdef AMREX_USE_ASCENT
+  // initialize Ascent
+  conduit::Node ascent_options;
+  ascent_options["mpi_comm"] =
+      MPI_Comm_c2f(amrex::ParallelContext::CommunicatorSub());
+  ascent_.open(ascent_options);
+#endif
 }
 
 template <typename problem_t>
@@ -364,6 +395,22 @@ template <typename problem_t> void AMRSimulation<problem_t>::readParameters() {
 
   // re-grid interval
   pp.query("regrid_interval", regrid_int);
+
+  // specify maximum walltime in HH:MM:SS format
+  std::string maxWalltimeInput;
+  pp.query("max_walltime", maxWalltimeInput);
+  // convert to seconds
+  int hours = 0;
+  int minutes = 0;
+  int seconds = 0;
+  int nargs = std::sscanf(maxWalltimeInput.c_str(), "%d:%d:%d", &hours,
+                          &minutes, &seconds);
+  if (nargs == 3) {
+    maxWalltime_ = 3600 * hours + 60 * minutes + seconds;
+    amrex::Print() << fmt::format(
+        "Setting walltime limit to {} hours, {} minutes, {} seconds.\n", hours,
+        minutes, seconds);
+  }
 }
 
 template <typename problem_t>
@@ -382,6 +429,16 @@ void AMRSimulation<problem_t>::setInitialConditions() {
   } else {
     // restart from a checkpoint
     ReadCheckpointFile();
+  }
+
+  // abort if amrex.async_out=1, it is currently broken
+  if (amrex::AsyncOut::UseAsyncOut()) {
+    amrex::Print()
+        << "[ERROR] [FATAL] AsyncOut is currently broken! If you want to "
+           "run with AsyncOut anyway (THIS MAY CAUSE DATA CORRUPTION), comment "
+           "out this line in src/simulation.hpp. Aborting."
+        << std::endl;
+    amrex::Abort();
   }
 
   if (plotfileInterval_ > 0) {
@@ -437,6 +494,14 @@ template <typename problem_t> void AMRSimulation<problem_t>::computeTimestep() {
   }
 }
 
+template <typename problem_t>
+auto AMRSimulation<problem_t>::getWalltime() -> amrex::Real {
+  const static amrex::Real start_time =
+      amrex::ParallelDescriptor::second(); // initialized on first call
+  const amrex::Real time = amrex::ParallelDescriptor::second();
+  return time - start_time;
+}
+
 template <typename problem_t> void AMRSimulation<problem_t>::evolve() {
   BL_PROFILE("AMRSimulation::evolve()");
 
@@ -444,6 +509,7 @@ template <typename problem_t> void AMRSimulation<problem_t>::evolve() {
 
   amrex::Real cur_time = tNew_[0];
   int last_plot_file_step = 0;
+  int last_chk_file_step = 0;
 
   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const &dx0 =
       geom[0].CellSizeArray();
@@ -454,11 +520,12 @@ template <typename problem_t> void AMRSimulation<problem_t>::evolve() {
     init_sum_cons[n] = state_new_[lev].sum(n) * vol;
   }
 
-  amrex::Real const start_time = amrex::ParallelDescriptor::second();
+  getWalltime(); // initialize start_time
 
   // Main time loop
   for (int step = istep[0]; step < maxTimesteps_ && cur_time < stopTime_;
        ++step) {
+
     if (suppress_output == 0) {
       amrex::Print() << "\nCoarse STEP " << step + 1 << " at t = " << cur_time
                      << " (" << (cur_time / stopTime_) * 100. << "%) starts ..."
@@ -487,15 +554,22 @@ template <typename problem_t> void AMRSimulation<problem_t>::evolve() {
     }
 
     if (checkpointInterval_ > 0 && (step + 1) % checkpointInterval_ == 0) {
+      last_chk_file_step = step + 1;
       WriteCheckpointFile();
     }
 
     if (cur_time >= stopTime_ - 1.e-6 * dt_[0]) {
+      // we have reached stopTime_
+      break;
+    }
+
+    if (maxWalltime_ > 0 && getWalltime() > 0.9 * maxWalltime_) {
+      // we have exceeded 90% of maxWalltime_
       break;
     }
   }
 
-  amrex::Real elapsed_sec = amrex::ParallelDescriptor::second() - start_time;
+  amrex::Real elapsed_sec = getWalltime();
 
   // compute reference solution (if it's a test problem)
   computeAfterEvolve(init_sum_cons);
@@ -530,10 +604,20 @@ template <typename problem_t> void AMRSimulation<problem_t>::evolve() {
   }
   amrex::Print() << std::endl;
 
+  // write final checkpoint
+  if (checkpointInterval_ > 0 && istep[0] > last_chk_file_step) {
+    WriteCheckpointFile();
+  }
+
   // write final plotfile
   if (plotfileInterval_ > 0 && istep[0] > last_plot_file_step) {
     WritePlotFile();
   }
+
+#ifdef AMREX_USE_ASCENT
+  // close Ascent
+  ascent_.close();
+#endif
 }
 
 // N.B.: This function actually works for subcycled or not subcycled, as long as
@@ -1041,11 +1125,51 @@ auto AMRSimulation<problem_t>::PlotFileMF() const
   return r;
 }
 
-// write plotfile to disk
+// do in-situ rendering with Ascent
+#ifdef AMREX_USE_ASCENT
 template <typename problem_t>
-void AMRSimulation<problem_t>::WritePlotFile() const {
+void AMRSimulation<problem_t>::AscentCustomRender(
+    conduit::Node const &blueprintMesh, std::string const &plotfilename) {
+  BL_PROFILE("AMRSimulation::AscentCustomRender()");
+
+  // add a scene with a pseudocolor plot
+  Node scenes;
+  scenes["s1/plots/p1/type"] = "pseudocolor";
+  scenes["s1/plots/p1/field"] = "gasDensity";
+
+  // set the output file name (ascent will add ".png")
+  scenes["s1/renders/r1/image_prefix"] = "render_density%05d";
+
+  // set camera position
+  amrex::Array<double, 3> position = {-0.6, -0.6, -0.8};
+  scenes["s1/renders/r1/camera/position"].set_float64_ptr(position.data(), 3);
+
+  // setup actions
+  Node actions;
+  Node &add_plots = actions.append();
+  add_plots["action"] = "add_scenes";
+  add_plots["scenes"] = scenes;
+  actions.append()["action"] = "execute";
+  actions.append()["action"] = "reset";
+
+  // send AMR mesh to ascent, do render
+  ascent_.publish(blueprintMesh);
+  ascent_.execute(actions); // will be replaced by ascent_actions.yml if present
+}
+#endif
+
+// write plotfile to disk
+template <typename problem_t> void AMRSimulation<problem_t>::WritePlotFile() {
   BL_PROFILE("AMRSimulation::WritePlotFile()");
 
+#ifndef AMREX_USE_HDF5
+  if (amrex::AsyncOut::UseAsyncOut()) {
+    // ensure that we flush any plotfiles that are currently being written
+    amrex::AsyncOut::Finish();
+  }
+#endif
+
+  // now construct output and submit to async write queue
   const std::string &plotfilename = PlotFileName(istep[0]);
   amrex::Vector<amrex::MultiFab> mf = PlotFileMF();
   amrex::Vector<const amrex::MultiFab *> mf_ptr = amrex::GetVecOfConstPtrs(mf);
@@ -1055,10 +1179,60 @@ void AMRSimulation<problem_t>::WritePlotFile() const {
                   componentNames_.end());
   varnames.insert(varnames.end(), derivedNames_.begin(), derivedNames_.end());
 
+#ifdef AMREX_USE_ASCENT
+  // rescale geometry
+  // (Ascent fails to render if you use parsec-size boxes in units of cm...)
+  amrex::Vector<amrex::Geometry> rescaledGeom = Geom();
+  const amrex::Real length = geom[0].ProbLength(0);
+  for (int i = 0; i < rescaledGeom.size(); ++i) {
+    auto const &dlo = rescaledGeom[i].ProbLoArray();
+    auto const &dhi = rescaledGeom[i].ProbHiArray();
+    std::array<amrex::Real, AMREX_SPACEDIM> new_dlo;
+    std::array<amrex::Real, AMREX_SPACEDIM> new_dhi;
+    for (int k = 0; k < AMREX_SPACEDIM; ++k) {
+      new_dlo[k] = dlo[k] / length;
+      new_dhi[k] = dhi[k] / length;
+    }
+    amrex::RealBox rescaledRealBox(new_dlo, new_dhi);
+    rescaledGeom[i].ProbDomain(rescaledRealBox);
+  }
+
+  // wrap MultiFabs into a Blueprint mesh
+  conduit::Node blueprintMesh;
+  amrex::MultiLevelToBlueprint(finest_level + 1, mf_ptr, varnames, rescaledGeom,
+                               tNew_[0], istep, refRatio(), blueprintMesh);
+  // pass Blueprint mesh to Ascent
+  AscentCustomRender(blueprintMesh, plotfilename);
+#endif
+
+  // write plotfile
   amrex::Print() << "Writing plotfile " << plotfilename << "\n";
 
+#ifdef AMREX_USE_HDF5
+  amrex::WriteMultiLevelPlotfileHDF5(plotfilename, finest_level + 1, mf_ptr,
+                                     varnames, Geom(), tNew_[0], istep,
+                                     refRatio());
+#else
   amrex::WriteMultiLevelPlotfile(plotfilename, finest_level + 1, mf_ptr,
                                  varnames, Geom(), tNew_[0], istep, refRatio());
+#endif
+}
+
+template <typename problem_t>
+void AMRSimulation<problem_t>::SetLastCheckpointSymlink(
+    std::string const &checkpointname) const {
+  // creates a symlink pointing to the most recent checkpoint
+
+  if (amrex::ParallelDescriptor::IOProcessor()) {
+    std::string lastSymlinkName = "last_chk";
+
+    // remove previous symlink, if it exists
+    if (std::filesystem::is_symlink(lastSymlinkName)) {
+      std::filesystem::remove(lastSymlinkName);
+    }
+    // create symlink
+    std::filesystem::create_directory_symlink(checkpointname, lastSymlinkName);
+  }
 }
 
 template <typename problem_t>
@@ -1142,6 +1316,9 @@ void AMRSimulation<problem_t>::WriteCheckpointFile() const {
         state_new_[lev],
         amrex::MultiFabFileFullPrefix(lev, checkpointname, "Level_", "Cell"));
   }
+
+  // create symlink and point it at this checkpoint dir
+  SetLastCheckpointSymlink(checkpointname);
 }
 
 // utility to skip to next line in Header

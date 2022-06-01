@@ -586,6 +586,11 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 			// prevent vacuum
 			HydroSystem<problem_t>::EnforcePressureFloor(densityFloor_, pressureFloor_, indexRange, stateNew);
 
+			// copy stateNew to state_new_[lev]
+			auto const &stateNew = state_new_[lev].array(iter);
+			amrex::FArrayBox stateNewFAB = amrex::FArrayBox(stateNew);
+			stateNewFAB.copy<amrex::RunOn::Device>(stateFinalFAB, 0, 0, ncompHydro_);
+
 			if (do_reflux) {
 				// increment flux registers
 				auto expandedFluxes = expandFluxArrays(fluxArrays, 0, state_new_[lev].nComp());
