@@ -476,10 +476,21 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 	AMREX_ASSERT(!state_old_[lev].contains_nan(0, state_old_[lev].nComp()));
 	AMREX_ASSERT(!state_old_[lev].contains_nan()); // check ghost cells
 
+	for (int i = 0; i <= 1; i++) {
+
 	// advance all grids on local processor (Stage 1 of integrator)
 	for (amrex::MFIter iter(state_new_[lev]); iter.isValid(); ++iter) {
 
-		const amrex::Box &indexRange = iter.validbox(); // 'validbox' == exclude ghost zones
+		// const amrex::Box &indexRange = iter.validbox(); // 'validbox' == exclude ghost zones
+		const amrex::Box &fullRange = iter.validbox();
+		amrex::Box indexRange = fullRange;
+
+		if (i == 0) {
+			indexRange.grow(-nghost_);
+		} else {
+			if (lev == 0) state_old_[lev].FillBoundary_finish();
+		}
+
 		auto const &stateOld = state_old_[lev].const_array(iter);
 		auto const &stateNew = state_new_[lev].array(iter);
 		auto fluxArrays = computeHydroFluxes(stateOld, indexRange, ncompHydro_);
@@ -538,9 +549,12 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 		}
 	}
 
+	}
+
 	if (integratorOrder_ == 2) {
 		// update ghost zones [intermediate stage stored in state_new_]
 		fillBoundaryConditions(state_new_[lev], state_new_[lev], lev, time + dt_lev);
+		if (lev == 0) state_new_[lev].FillBoundary_finish();
 
 		// check intermediate state validity
 		AMREX_ASSERT(!state_new_[lev].contains_nan(0, state_new_[lev].nComp()));
