@@ -48,6 +48,9 @@
 #include "radiation_system.hpp"
 #include "simulation.hpp"
 
+#include <chrono>
+#include "AMReX_ParallelDescriptor.H"
+
 // Simulation class should be initialized only once per program (i.e., is a singleton)
 template <typename problem_t> class RadhydroSimulation : public AMRSimulation<problem_t>
 {
@@ -469,6 +472,8 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 		fluxScaleFactor = 1.0;
 	}
 
+  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
 	// update ghost zones [old timestep]
 	fillBoundaryConditions(state_old_[lev], state_old_[lev], lev, time);
 
@@ -495,6 +500,7 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 		    dt_lev, geom[lev].CellSizeArray(), indexRange, ncompHydro_,
 			redoFlag.array());
 
+#if 0
 		// first-order flux correction (FOFC)
 		if (redoFlag.max<amrex::RunOn::Device>() != quokka::redoFlag::none) {
 			// compute first-order fluxes (on the whole FAB)
@@ -526,6 +532,7 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 				}
 			}
 		}
+#endif
 
 		// prevent vacuum
 		HydroSystem<problem_t>::EnforcePressureFloor(densityFloor_, pressureFloor_, indexRange, stateNew);
@@ -537,6 +544,9 @@ void RadhydroSimulation<problem_t>::advanceHydroAtLevel(int lev, amrex::Real tim
 					       fluxScaleFactor * dt_lev);
 		}
 	}
+
+  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+  std::cout << amrex::ParallelDescriptor::MyProc() << " | Time difference = " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "[ms]" << std::endl;
 
 	if (integratorOrder_ == 2) {
 		// update ghost zones [intermediate stage stored in state_new_]
